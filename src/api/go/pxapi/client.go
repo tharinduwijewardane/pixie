@@ -66,6 +66,7 @@ type Client struct {
 	grpcConn *grpc.ClientConn
 	cmClient cloudpb.VizierClusterInfoClient
 	vizier   vizierpb.VizierServiceClient
+	plClient cloudpb.PluginServiceClient
 }
 
 // NewClient creates a new Pixie API Client.
@@ -98,8 +99,8 @@ func (c *Client) init(ctx context.Context) error {
 
 	c.grpcConn = conn
 	c.cmClient = cloudpb.NewVizierClusterInfoClient(conn)
-
 	c.vizier = vizierpb.NewVizierServiceClient(conn)
+	c.plClient = cloudpb.NewPluginServiceClient(conn)
 	return nil
 }
 

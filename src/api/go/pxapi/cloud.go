@@ -20,6 +20,8 @@ package pxapi
 
 import (
 	"context"
+	"github.com/gogo/protobuf/types"
+	"px.dev/pixie/src/api/proto/uuidpb"
 
 	"px.dev/pixie/src/api/go/pxapi/errdefs"
 	"px.dev/pixie/src/api/go/pxapi/utils"
@@ -143,5 +145,183 @@ func (c *Client) DeleteAPIKey(ctx context.Context, id string) error {
 	req := utils.ProtoFromUUIDStrOrNil(id)
 	apiKeyMgr := cloudpb.NewAPIKeyManagerClient(c.grpcConn)
 	_, err := apiKeyMgr.Delete(c.cloudCtxWithMD(ctx), req)
+	return err
+}
+
+func (c *Client) GetPlugins(ctx context.Context) ([]*Plugin, error) {
+	req := &cloudpb.GetPluginsRequest{}
+	res, err := c.plClient.GetPlugins(c.cloudCtxWithMD(ctx), req)
+	if err != nil {
+		return nil, err
+	}
+	var plugins []*Plugin
+	for _, p := range res.GetPlugins() {
+		plugins = append(plugins, &Plugin{
+			Name:               p.Name,
+			Id:                 p.Id,
+			Description:        p.Description,
+			Logo:               p.Logo,
+			LatestVersion:      p.LatestVersion,
+			RetentionSupported: p.RetentionSupported,
+			RetentionEnabled:   p.RetentionEnabled,
+			EnabledVersion:     p.EnabledVersion,
+		})
+	}
+	return plugins, nil
+}
+
+func (c *Client) GetRetentionPluginInfo(ctx context.Context, pluginId, version string) (*RetentionPluginInfo, error) {
+	req := &cloudpb.GetRetentionPluginInfoRequest{
+		PluginId: pluginId,
+		Version:  version,
+	}
+	res, err := c.plClient.GetRetentionPluginInfo(c.cloudCtxWithMD(ctx), req)
+	if err != nil {
+		return nil, err
+	}
+	return &RetentionPluginInfo{
+		Configs:              res.Configs,
+		AllowCustomExportUrl: res.AllowCustomExportURL,
+		AllowInsecureTls:     res.AllowInsecureTLS,
+		DefaultExportUrl:     res.DefaultExportURL,
+	}, nil
+}
+
+func (c *Client) GetOrgRetentionPluginConfig(ctx context.Context, pluginId string) (*OrgRetentionPluginConfig, error) {
+	req := &cloudpb.GetOrgRetentionPluginConfigRequest{
+		PluginId: pluginId,
+	}
+	res, err := c.plClient.GetOrgRetentionPluginConfig(c.cloudCtxWithMD(ctx), req)
+	if err != nil {
+		return nil, err
+	}
+	return &OrgRetentionPluginConfig{
+		Configs:         res.Configs,
+		CustomExportUrl: res.CustomExportUrl,
+		InsecureTls:     res.InsecureTLS,
+	}, nil
+}
+
+func (c *Client) UpdateRetentionPluginConfig(ctx context.Context, req *UpdateRetentionPluginConfigRequest) error {
+	r := &cloudpb.UpdateRetentionPluginConfigRequest{
+		PluginId:        req.PluginId,
+		Configs:         req.Configs,
+		Enabled:         &types.BoolValue{Value: req.Enabled},
+		Version:         &types.StringValue{Value: req.Version},
+		CustomExportUrl: &types.StringValue{Value: req.CustomExportUrl},
+		InsecureTLS:     &types.BoolValue{Value: req.InsecureTls},
+		DisablePresets:  &types.BoolValue{Value: req.DisablePresets},
+	}
+	_, err := c.plClient.UpdateRetentionPluginConfig(c.cloudCtxWithMD(ctx), r)
+	return err
+}
+
+func (c *Client) GetRetentionScripts(ctx context.Context) ([]*RetentionScriptMeta, error) {
+	req := &cloudpb.GetRetentionScriptsRequest{}
+	res, err := c.plClient.GetRetentionScripts(c.cloudCtxWithMD(ctx), req)
+	if err != nil {
+		return nil, err
+	}
+	var retentionScript []*RetentionScriptMeta
+	for _, s := range res.GetScripts() {
+		retentionScript = append(retentionScript, &RetentionScriptMeta{
+			ScriptId:           utils.ProtoToUUIDStr(s.ScriptID),
+			ScriptName:         s.ScriptName,
+			Description:        s.Description,
+			FrequencyInSeconds: s.FrequencyS,
+			ClusterIds: func() []string {
+				var clusterIds []string
+				for _, cId := range s.ClusterIDs {
+					clusterIds = append(clusterIds, utils.ProtoToUUIDStr(cId))
+				}
+				return clusterIds
+			}(),
+			PluginId: s.PluginId,
+			Enabled:  s.Enabled,
+			IsPreset: s.IsPreset,
+		})
+	}
+	return retentionScript, nil
+}
+
+func (c *Client) GetRetentionScript(ctx context.Context, scriptId string) (*RetentionScript, error) {
+	req := &cloudpb.GetRetentionScriptRequest{
+		ID: utils.ProtoFromUUIDStrOrNil(scriptId),
+	}
+	res, err := c.plClient.GetRetentionScript(c.cloudCtxWithMD(ctx), req)
+	if err != nil {
+		return nil, err
+	}
+	return &RetentionScript{
+		Script: RetentionScriptMeta{
+			ScriptId:           utils.ProtoToUUIDStr(res.Script.ScriptID),
+			ScriptName:         res.Script.ScriptName,
+			Description:        res.Script.Description,
+			FrequencyInSeconds: res.Script.FrequencyS,
+			ClusterIds: func() []string {
+				var clusterIds []string
+				for _, cId := range res.Script.ClusterIDs {
+					clusterIds = append(clusterIds, utils.ProtoToUUIDStr(cId))
+				}
+				return clusterIds
+			}(),
+			PluginId: res.Script.PluginId,
+			Enabled:  res.Script.Enabled,
+			IsPreset: res.Script.IsPreset,
+		},
+		Contents:  res.Contents,
+		ExportUrl: res.ExportURL,
+	}, nil
+}
+
+func (c *Client) UpdateRetentionScript(ctx context.Context, req *UpdateRetentionScriptRequest) error {
+	r := &cloudpb.UpdateRetentionScriptRequest{
+		ID:          utils.ProtoFromUUIDStrOrNil(req.ScriptId),
+		ScriptName:  &types.StringValue{Value: req.ScriptName},
+		Description: &types.StringValue{Value: req.Description},
+		Enabled:     &types.BoolValue{Value: req.Enabled},
+		FrequencyS:  &types.Int64Value{Value: req.FrequencyInSeconds},
+		Contents:    &types.StringValue{Value: req.Contents},
+		ExportUrl:   &types.StringValue{Value: req.ExportUrl},
+		ClusterIDs: func() []*uuidpb.UUID {
+			var clusterIds []*uuidpb.UUID
+			for _, cId := range req.ClusterIds {
+				clusterIds = append(clusterIds, utils.ProtoFromUUIDStrOrNil(cId))
+			}
+			return clusterIds
+		}(),
+	}
+	_, err := c.plClient.UpdateRetentionScript(c.cloudCtxWithMD(ctx), r)
+	return err
+}
+
+func (c *Client) CreateRetentionScript(ctx context.Context, req *CreateRetentionScriptRequest) (string, error) {
+	r := &cloudpb.CreateRetentionScriptRequest{
+		ScriptName:  req.ScriptName,
+		Description: req.Description,
+		FrequencyS:  req.FrequencyInSeconds,
+		Contents:    req.Contents,
+		ExportUrl:   req.ExportUrl,
+		ClusterIDs: func() []*uuidpb.UUID {
+			var clusterIds []*uuidpb.UUID
+			for _, cId := range req.ClusterIds {
+				clusterIds = append(clusterIds, utils.ProtoFromUUIDStrOrNil(cId))
+			}
+			return clusterIds
+		}(),
+		PluginId: req.PluginId,
+	}
+	res, err := c.plClient.CreateRetentionScript(c.cloudCtxWithMD(ctx), r)
+	if err != nil {
+		return "", err
+	}
+	return utils.ProtoToUUIDStr(res.ID), nil
+}
+
+func (c *Client) DeleteRetentionScript(ctx context.Context, scriptId string) error {
+	req := &cloudpb.DeleteRetentionScriptRequest{
+		ID: utils.ProtoFromUUIDStrOrNil(scriptId),
+	}
+	_, err := c.plClient.DeleteRetentionScript(c.cloudCtxWithMD(ctx), req)
 	return err
 }
